@@ -5,17 +5,17 @@
 # 特点：安全性 + 性能 双优化
 #=============================================================================
 # 版本管理规则：
-# 1. 大版本更新时修改 SCRIPT_VERSION，并更新版本备注（保留最新5条）
-# 2. 小修复时只修改 SCRIPT_LAST_UPDATE，用于快速识别脚本是否已更新
+# 1. 正式版本迭代时修改 SCRIPT_VERSION，并更新版本备注（保留最新5条）
+# 2. 临时热修/不发版时只修改 SCRIPT_LAST_UPDATE，用于快速识别脚本是否已更新
 #=============================================================================
+# v5.0.2 更新: 修复 Snell 查看节点配置换 IP 后仍输出旧 IP；修复 Xray 子菜单 warning 调用和默认端口交互；同步 README 功能描述 (by Eric86777)
 # v5.0.1 更新: 修复 XanMod 官方源 releases 为空导致 BBR v3 内核安装找不到 linux-xanmod-x64v3；改为按系统 codename 写源并校验包存在；修复 CF Tunnel 带引号 --config 解析 (by Eric86777)
 # v5.0.0 更新: 新增 Cloudflare Tunnel 管理模块 (菜单 32-7)：12 项子功能 + 6 步向导含失败自动回滚；修复 Sub-Store 6 个历史 bug；统一配置到 /etc/cloudflared/ 并自动迁移老路径 (by Eric86777)
 # v4.9.8 更新: 修复Snell/VLESS/OAI2节点随机掉线：Restart=always+systemd健壮性加固；XanMod内核安装增加本地CPU检测兜底 (by Eric86777)
 # v4.9.5 更新: 修复Responses API代理SSE解析，解决502报错，重新部署生效 (by Eric86777)
-# v4.9.4 更新: 修复Responses API转换代理：兼容SSE流式响应格式，解决502 JSON解析失败 (by Eric86777)
 
-SCRIPT_VERSION="5.0.1"
-SCRIPT_LAST_UPDATE="修复 BBR v3/XanMod 安装:官方 releases 源为空时自动使用系统 codename 源；校验可用内核包；修复 CF Tunnel --config 解析"
+SCRIPT_VERSION="5.0.2"
+SCRIPT_LAST_UPDATE="修复 Snell 查看配置换 IP 后仍输出旧 IP；修复 Xray warning 调用与默认端口交互；同步 Xray 功能说明"
 #=============================================================================
 
 #=============================================================================
@@ -7791,6 +7791,104 @@ remove_all_snell_reserved_ports() {
     fi
 }
 
+# 获取 Snell 当前公网 IP（查看配置时实时刷新，避免 VPS 换 IP 后输出旧地址）
+get_snell_public_ip() {
+    local ip_mode="$1"
+    local host_ip=""
+
+    case "$ip_mode" in
+        v6-only)
+            host_ip=$(curl -6 -s --max-time 5 https://api64.ipify.org 2>/dev/null)
+            [ -z "$host_ip" ] && host_ip=$(curl -6 -s --max-time 5 https://ifconfig.co 2>/dev/null)
+            ;;
+        v4-only)
+            host_ip=$(curl -4 -s --max-time 5 https://api.ipify.org 2>/dev/null)
+            [ -z "$host_ip" ] && host_ip=$(curl -4 -s --max-time 5 https://ifconfig.me 2>/dev/null)
+            ;;
+        *)
+            host_ip=$(curl -4 -s --max-time 5 https://api.ipify.org 2>/dev/null)
+            [ -z "$host_ip" ] && host_ip=$(curl -6 -s --max-time 5 https://api64.ipify.org 2>/dev/null)
+            ;;
+    esac
+
+    echo "$host_ip"
+}
+
+# 实时生成并输出 Snell 客户端配置
+show_snell_config_live() {
+    local port="$1"
+    local conf_file="/etc/snell/snell-${port}.conf"
+    local saved_file="/etc/snell/config-${port}.txt"
+
+    if ! [[ "$port" =~ ^[0-9]+$ ]] || [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
+        echo -e "${SNELL_RED}无效端口，请输入 1-65535 之间的数字${SNELL_RESET}"
+        return 1
+    fi
+
+    # 兼容旧版单实例
+    if [ ! -f "$conf_file" ] && [ -f "/etc/snell/snell-server.conf" ] && grep -Eq ":[[:space:]]*${port}([[:space:]]|$)" /etc/snell/snell-server.conf 2>/dev/null; then
+        conf_file="/etc/snell/snell-server.conf"
+        saved_file="/etc/snell/config.txt"
+    fi
+
+    if [ ! -f "$conf_file" ]; then
+        echo -e "${SNELL_RED}未找到端口 ${port} 的 Snell 服务配置文件${SNELL_RESET}"
+        return 1
+    fi
+
+    local saved_line node_name psk ipv6_value ip_mode ip_version_str host_ip host_ip_formatted final_config
+    saved_line=""
+    [ -f "$saved_file" ] && saved_line=$(head -n 1 "$saved_file" 2>/dev/null)
+
+    if [ -n "$saved_line" ] && echo "$saved_line" | grep -q " = snell,"; then
+        node_name=$(echo "$saved_line" | sed -E 's/[[:space:]]*=[[:space:]]*snell,.*$//')
+    else
+        node_name="Snell-Node-${port}"
+    fi
+
+    psk=$(grep -E '^[[:space:]]*psk[[:space:]]*=' "$conf_file" 2>/dev/null | tail -n 1 | sed -E 's/^[^=]+=[[:space:]]*//; s/[[:space:]]*$//')
+    if [ -z "$psk" ]; then
+        echo -e "${SNELL_RED}未能从 ${conf_file} 读取 PSK，无法生成客户端配置${SNELL_RESET}"
+        return 1
+    fi
+
+    if echo "$saved_line" | grep -q "ip-version=v6-only"; then
+        ip_mode="v6-only"
+        ip_version_str=", ip-version=v6-only"
+    elif echo "$saved_line" | grep -q "ip-version=v4-only"; then
+        ip_mode="v4-only"
+        ip_version_str=", ip-version=v4-only"
+    else
+        ipv6_value=$(grep -E '^[[:space:]]*ipv6[[:space:]]*=' "$conf_file" 2>/dev/null | tail -n 1 | sed -E 's/^[^=]+=[[:space:]]*//; s/[[:space:]]*$//')
+        if [ "$ipv6_value" = "false" ]; then
+            ip_mode="v4-only"
+            ip_version_str=", ip-version=v4-only"
+        else
+            ip_mode="dual"
+            ip_version_str=""
+        fi
+    fi
+
+    host_ip=$(get_snell_public_ip "$ip_mode")
+    if [ -z "$host_ip" ]; then
+        echo -e "${SNELL_YELLOW}⚠ 无法自动获取当前公网 IP，节点链接里的 IP 需要您手动替换${SNELL_RESET}"
+        host_ip="<请手动填写公网IP>"
+    fi
+
+    host_ip_formatted="$host_ip"
+    if echo "$host_ip" | grep -q ":"; then
+        host_ip_formatted="[${host_ip}]"
+    fi
+
+    final_config="${node_name} = snell, ${host_ip_formatted}, ${port}, psk=${psk}, version=5, reuse=true${ip_version_str}"
+    echo -e "${SNELL_CYAN}${final_config}${SNELL_RESET}"
+
+    # 成功拿到真实公网 IP 时刷新缓存，列表里的节点名称仍沿用该文件
+    if [ "$host_ip" != "<请手动填写公网IP>" ]; then
+        echo "$final_config" > "$saved_file" 2>/dev/null && chmod 600 "$saved_file" 2>/dev/null || true
+    fi
+}
+
 # 安装 Snell
 install_snell() {
     echo -e "${SNELL_GREEN}正在安装 Snell${SNELL_RESET}"
@@ -8517,13 +8615,11 @@ snell_menu() {
                 if [ "$count" -gt 0 ]; then
                     echo ""
                     read -p "请输入要查看配置的端口号: " view_port
-                    if [ -f "/etc/snell/config-${view_port}.txt" ]; then
+                    if ! [[ "$view_port" =~ ^[0-9]+$ ]] || [ "$view_port" -lt 1 ] || [ "$view_port" -gt 65535 ]; then
+                        echo -e "${SNELL_RED}无效端口，请输入 1-65535 之间的数字${SNELL_RESET}"
+                    elif [ -f "/etc/snell/snell-${view_port}.conf" ] || { [ -f "/etc/snell/snell-server.conf" ] && grep -Eq ":[[:space:]]*${view_port}([[:space:]]|$)" /etc/snell/snell-server.conf; }; then
                         echo ""
-                        cat "/etc/snell/config-${view_port}.txt"
-                    elif [ -f "/etc/snell/snell-server.conf" ] && grep -q ":${view_port}" /etc/snell/snell-server.conf; then
-                         # 旧版配置查看 (这里只是简单处理，实际上旧版没有 config.txt 备份可能需要解析 conf 文件)
-                         echo "旧版配置 (端口 ${view_port}):"
-                         cat /etc/snell/snell-server.conf
+                        show_snell_config_live "$view_port"
                     else
                         echo -e "${SNELL_RED}未找到端口 ${view_port} 的配置文件${SNELL_RESET}"
                     fi
@@ -8568,20 +8664,17 @@ run_xinchendahai_xray() {
 
 # ==============================================================================
 # Xray VLESS-Reality & Shadowsocks 2022 多功能管理脚本
-# 版本: Final v2.9.1
-# 更新日志 (v2.9.1):
-# - [安全] 添加配置文件权限保护
-# - [安全] 增强脚本下载验证
-# - [安全] 敏感信息显示保护
-# - [稳定] 网络操作重试机制
-# - [稳定] 服务启动详细错误显示
+# 版本: Final v2.9.2
+# 更新日志 (v2.9.2):
+# - [修复] 修正 SOCKS5 链式代理 warning 函数调用
+# - [体验] VLESS/SS 留空优先使用默认端口，不可用时自动随机端口
 # ==============================================================================
 
 # --- Shell 严格模式 ---
 set -euo pipefail
 
 # --- 全局常量 ---
-readonly XRAY_SCRIPT_VERSION="Final v2.9.1"
+readonly XRAY_SCRIPT_VERSION="Final v2.9.2"
 readonly xray_config_path="/usr/local/etc/xray/config.json"
 readonly xray_binary_path="/usr/local/bin/xray"
 readonly xray_install_script_url="https://github.com/XTLS/Xray-install/raw/main/install-release.sh"
@@ -9049,15 +9142,21 @@ prompt_for_vless_config() {
     show_port_usage
 
     while true; do
-        read -p "$(echo -e " -> 请输入 VLESS 端口 (留空随机生成): ")" p_port || true
+        read -p "$(echo -e " -> 请输入 VLESS 端口 (留空使用默认 ${default_port}): ")" p_port || true
         if [[ -z "$p_port" ]]; then
-            # 回车随机生成
-            p_port=$(generate_random_port)
-            if [ $? -eq 0 ]; then
-                info "已为您随机生成端口: ${cyan}${p_port}${none}"
+            if is_port_available "$default_port" >/dev/null 2>&1; then
+                p_port="$default_port"
+                info "使用默认端口: ${cyan}${p_port}${none}"
                 break
             else
-                continue
+                warning "默认端口 ${default_port} 不可用，正在随机生成可用端口..."
+                p_port=$(generate_random_port)
+                if [ $? -eq 0 ]; then
+                    info "已为您随机生成端口: ${cyan}${p_port}${none}"
+                    break
+                else
+                    continue
+                fi
             fi
         else
             # 手动输入
@@ -9123,15 +9222,21 @@ prompt_for_ss_config() {
     show_port_usage
 
     while true; do
-        read -p "$(echo -e " -> 请输入 Shadowsocks 端口 (留空随机生成): ")" p_port || true
+        read -p "$(echo -e " -> 请输入 Shadowsocks 端口 (留空使用默认 ${default_port}): ")" p_port || true
         if [[ -z "$p_port" ]]; then
-            # 回车随机生成
-            p_port=$(generate_random_port)
-            if [ $? -eq 0 ]; then
-                info "已为您随机生成端口: ${cyan}${p_port}${none}"
+            if is_port_available "$default_port" >/dev/null 2>&1; then
+                p_port="$default_port"
+                info "使用默认端口: ${cyan}${p_port}${none}"
                 break
             else
-                continue
+                warning "默认端口 ${default_port} 不可用，正在随机生成可用端口..."
+                p_port=$(generate_random_port)
+                if [ $? -eq 0 ]; then
+                    info "已为您随机生成端口: ${cyan}${p_port}${none}"
+                    break
+                else
+                    continue
+                fi
             fi
         else
             # 手动输入
@@ -9976,7 +10081,7 @@ add_socks5_proxy() {
     
     if [[ -n "$existing_rule" ]]; then
         echo ""
-        warn "⚠️  该节点已配置链式代理: ${cyan}${existing_rule}${none}"
+        warning "⚠️  该节点已配置链式代理: ${cyan}${existing_rule}${none}"
         read -p " 是否覆盖现有配置? [y/N]: " overwrite || true
         if [[ ! "$overwrite" =~ ^[Yy]$ ]]; then
             return
@@ -10111,7 +10216,7 @@ add_socks5_proxy() {
             success "✅ Xray 已重启"
         else
             error "❌ Xray 重启失败，请检查日志: journalctl -u xray -n 20"
-            warn "已创建备份: ${xray_config_path}.bak.*"
+            warning "已创建备份: ${xray_config_path}.bak.*"
         fi
     fi
 }
@@ -10281,7 +10386,7 @@ delete_socks5_proxy() {
             success "✅ Xray 已重启"
         else
             error "❌ Xray 重启失败，请检查日志: journalctl -u xray -n 20"
-            warn "已创建备份: ${xray_config_path}.bak.*"
+            warning "已创建备份: ${xray_config_path}.bak.*"
         fi
     fi
 }

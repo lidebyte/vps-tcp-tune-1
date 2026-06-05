@@ -1,10 +1,10 @@
-# BBR v3 优化脚本 - Ultimate Edition v5.0.1
+# BBR v3 优化脚本 - Ultimate Edition v5.0.2
 
 **XanMod 内核 + BBR v3 + 全方位 VPS 管理工具集**
 
 一键安装 XanMod 内核，启用 BBR v3 拥塞控制，集成 32 项实用功能，优化你的 VPS 服务器。
 
-> **版本**: v5.0.1 🔧 **修复更新**：修复 XanMod 官方 `releases` 源为空导致 BBR v3 内核安装找不到 `linux-xanmod-x64v3`，并修复 Cloudflare Tunnel 配置解析
+> **版本**: v5.0.2 🔧 **修复更新**：修复 Snell 查看节点配置在 VPS 换 IP 后仍输出旧 IP，并优化 Xray 默认端口交互与功能描述
 
 ---
 
@@ -127,7 +127,7 @@ chmod +x net-tcp-tune.sh
 | 编号 | 功能名称                     | 说明                                            |
 | :--: | ---------------------------- | ----------------------------------------------- |
 |  12  | **星辰大海 Snell 协议**      | 推荐，v5.0.1 内核，支持多实例/多端口            |
-|  13  | **星辰大海 Xray 一键多协议** | 推荐，VLESS+Reality + SS2022 + TUIC v5 + AnyTLS |
+|  13  | **星辰大海 Xray 一键多协议** | 推荐，VLESS+Reality + SS2022 + SOCKS5 链式代理 |
 |  14  | 禁止端口通过中国大陆直连     | 安全防护，防止被扫                              |
 |  15  | 一键部署 SOCKS5 代理         | 快速搭建 SOCKS5 服务                            |
 |  16  | Sub-Store 多实例管理         | 强大的订阅转换工具                              |
