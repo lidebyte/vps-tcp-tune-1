@@ -1,10 +1,10 @@
-# BBR v3 优化脚本 - Ultimate Edition v5.0.4
+# BBR v3 优化脚本 - Ultimate Edition v5.0.5
 
 **XanMod 内核 + BBR v3 + 全方位 VPS 管理工具集**
 
 一键安装 XanMod 内核，启用 BBR v3 拥塞控制，集成 32 项实用功能，优化你的 VPS 服务器。
 
-> **版本**: v5.0.4 🔧 **修复更新**：Snell 菜单 12-4 改为一键修复不通/掉线，自动补齐旧实例稳定性防护
+> **版本**: v5.0.5 🔧 **修复更新**：bbr 快捷命令下载改用 `curl -q`，避免异常 curlrc/Authorization 配置导致 GitHub raw 401
 
 ---
 
@@ -22,7 +22,7 @@ apt update -y && apt install curl -y
 
 ```bash
 # 安装别名
-bash <(curl -fsSL "https://raw.githubusercontent.com/Eric86777/vps-tcp-tune/main/install-alias.sh?$(date +%s)")
+bash <(curl -q -fsSL "https://raw.githubusercontent.com/Eric86777/vps-tcp-tune/main/install-alias.sh?$(date +%s)")
 
 # 重新加载配置
 source ~/.bashrc  # 或 source ~/.zshrc
@@ -44,8 +44,8 @@ bbr
 ### 方式2：在线运行（临时使用）
 
 ```bash
-# 推荐：使用时间戳参数确保获取最新版本（无缓存）
-bash <(curl -fsSL "https://raw.githubusercontent.com/Eric86777/vps-tcp-tune/main/net-tcp-tune.sh?$(date +%s)")
+# 推荐：使用 -q 忽略本机 curlrc，并用时间戳参数确保获取最新版本（无缓存）
+bash <(curl -q -fsSL "https://raw.githubusercontent.com/Eric86777/vps-tcp-tune/main/net-tcp-tune.sh?$(date +%s)")
 ```
 
 ### 方式3：下载到本地
@@ -266,6 +266,17 @@ AI 代理工具箱包含：
 **Q: 安装后运行 `bbr` 提示找不到命令？**
 
 A: 请执行 `source ~/.bashrc` 重新加载配置，或者断开 SSH 重连即可。
+
+**Q: 运行 `bbr` 提示 `curl: (22) The requested URL returned error: 401`？**
+
+A: 通常是该机器旧别名或本机 `~/.curlrc` 带了异常 Authorization。请重新安装别名：
+
+```bash
+unalias bbr 2>/dev/null || true
+unset -f bbr 2>/dev/null || true
+bash <(curl -q -fsSL "https://raw.githubusercontent.com/Eric86777/vps-tcp-tune/main/install-alias.sh?$(date +%s)")
+source ~/.bashrc
+```
 
 **Q: Snell 更新后旧版本还在？**
 

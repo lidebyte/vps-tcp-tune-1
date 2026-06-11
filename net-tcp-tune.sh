@@ -8,14 +8,14 @@
 # 1. 正式版本迭代时修改 SCRIPT_VERSION，并更新版本备注（保留最新5条）
 # 2. 临时热修/不发版时只修改 SCRIPT_LAST_UPDATE，用于快速识别脚本是否已更新
 #=============================================================================
+# v5.0.5 更新: 修复 bbr 快捷命令在存在异常 ~/.curlrc/Authorization 配置时可能 curl 401 的问题，别名改用 curl -q (by Eric86777)
 # v5.0.4 更新: Snell 12-4 改为一键修复不通/掉线：补齐旧实例 systemd/端口保留/每日重启兜底并保留核心更新入口 (by Eric86777)
 # v5.0.3 更新: 修复 Xray Reality 密钥对解析兼容性，适配 Private key/Public key 输出格式 (by Eric86777)
 # v5.0.2 更新: 修复 Snell 查看节点配置换 IP 后仍输出旧 IP；修复 Xray 子菜单 warning 调用和默认端口交互；同步 README 功能描述 (by Eric86777)
 # v5.0.1 更新: 修复 XanMod 官方源 releases 为空导致 BBR v3 内核安装找不到 linux-xanmod-x64v3；改为按系统 codename 写源并校验包存在；修复 CF Tunnel 带引号 --config 解析 (by Eric86777)
-# v5.0.0 更新: 新增 Cloudflare Tunnel 管理模块 (菜单 32-7)：12 项子功能 + 6 步向导含失败自动回滚；修复 Sub-Store 6 个历史 bug；统一配置到 /etc/cloudflared/ 并自动迁移老路径 (by Eric86777)
 
-SCRIPT_VERSION="5.0.4"
-SCRIPT_LAST_UPDATE="Snell 12-4 一键修复不通/掉线，补齐旧实例稳定性防护"
+SCRIPT_VERSION="5.0.5"
+SCRIPT_LAST_UPDATE="修复 bbr 快捷命令 curl 401，别名下载改用 curl -q 忽略本机 curlrc"
 #=============================================================================
 
 #=============================================================================
@@ -7053,7 +7053,7 @@ strip_bbr_alias_blocks() {
                line ~ /^# <<< net-tcp-tune alias <<</ ||
                line ~ /^# =+$/ ||
                line ~ /net-tcp-tune[[:space:]]+快捷别名/ ||
-               line ~ /使用时间戳参数确保每次都获取最新版本/
+               line ~ /使用.*时间戳参数确保每次都获取最新版本/
     }
     function is_end_marker(line) {
         return line ~ /^# <<< net-tcp-tune alias <<</
